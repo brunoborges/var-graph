@@ -195,6 +195,53 @@
 
     select { width: 80px; }
 
+    /* ── Share toast ── */
+    #shareToast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #FFD700;
+      color: #07111e;
+      font-weight: 700;
+      font-size: 0.82em;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 10px 20px;
+      border-radius: 6px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .25s, transform .25s;
+      z-index: 9999;
+    }
+    #shareToast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ── Share URL box ── */
+    #shareUrlBox {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      background: #07111e;
+      border: 1px solid #1a3352;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-top: 14px;
+    }
+    #shareUrlBox.visible { display: flex; }
+    #shareUrlInput {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #5a8ab0;
+      font-size: 0.8em;
+      font-family: monospace;
+      outline: none;
+      min-width: 0;
+    }
+
     /* ── Responsive ── */
     @media (max-width: 600px) {
       .touch-row { gap: 8px; }
@@ -251,9 +298,18 @@
         <option value="5">5×</option>
       </select>
     </div>
+    <button class="btn btn-outline" onclick="shareGraph()" title="Copy shareable link to clipboard">🔗 Share</button>
+  </div>
+
+  <!-- Share URL display -->
+  <div id="shareUrlBox">
+    <input id="shareUrlInput" type="text" readonly onclick="this.select()">
+    <button class="btn btn-outline" style="padding:5px 10px;font-size:.75em" onclick="copyShareUrl()">Copy</button>
   </div>
 
 </div>
+
+<div id="shareToast">Link copied to clipboard!</div>
 
 <script>
   /* ─── State ─────────────────────────────────────── */
@@ -568,6 +624,94 @@
     animId = requestAnimationFrame(animLoop);
   }
 
+  /* ─── URL Sharing ───────────────────────────────── */
+  function encodeGraphData(data) {
+    const json = JSON.stringify(data);
+    // btoa needs a binary string; encodeURIComponent handles unicode
+    return btoa(encodeURIComponent(json)
+      .replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function decodeGraphData(encoded) {
+    // Reverse base64url → base64 → binary string → URI decode → JSON
+    const b64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(b64);
+    const json = decodeURIComponent(
+      Array.from(binary).map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join('')
+    );
+    return JSON.parse(json);
+  }
+
+  function getShareURL() {
+    const duration = Math.max(0.5, parseFloat(document.getElementById('duration').value) || 6);
+    const touches  = getTouches();
+    const data     = { duration, touches };
+    const encoded  = encodeGraphData(data);
+    const url      = new URL(window.location.href.split('?')[0]);
+    url.searchParams.set('d', encoded);
+    return url.toString();
+  }
+
+  function shareGraph() {
+    const url = getShareURL();
+    const box = document.getElementById('shareUrlBox');
+    const inp = document.getElementById('shareUrlInput');
+    inp.value = url;
+    box.classList.add('visible');
+    copyShareUrl(url);
+  }
+
+  function copyShareUrl(url) {
+    const target = url || document.getElementById('shareUrlInput').value;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(target).then(showToast).catch(() => fallbackCopy(target));
+    } else {
+      fallbackCopy(target);
+    }
+  }
+
+  function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity  = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    try { document.execCommand('copy'); showToast(); } catch (_) {}
+    document.body.removeChild(ta);
+  }
+
+  let toastTimer;
+  function showToast() {
+    const t = document.getElementById('shareToast');
+    t.classList.add('visible');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('visible'), 2500);
+  }
+
+  function loadFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    const d = params.get('d');
+    if (!d) return false;
+    try {
+      const data = decodeGraphData(d);
+      // Set duration
+      document.getElementById('duration').value = data.duration ?? 6;
+      // Clear existing touch rows
+      document.getElementById('touchList').innerHTML = '';
+      touchSeq = 0;
+      // Restore touches
+      if (Array.isArray(data.touches)) {
+        data.touches.forEach(t => addTouch(t.time ?? '', t.intensity ?? 60, t.label ?? ''));
+      }
+      return true;
+    } catch (e) {
+      console.warn('Could not load graph from URL:', e);
+      return false;
+    }
+  }
+
   /* ─── Resize ────────────────────────────────────── */
   let resizeTimer;
   window.addEventListener('resize', () => {
@@ -578,9 +722,11 @@
   });
 
   /* ─── Bootstrap ─────────────────────────────────── */
-  addTouch(1.5, 65, 'Touch 1');
-  addTouch(3.2, 88, 'Handball');
-  addTouch(4.8, 55, 'Touch 3');
+  if (!loadFromURL()) {
+    addTouch(1.5, 65, 'Touch 1');
+    addTouch(3.2, 88, 'Handball');
+    addTouch(4.8, 55, 'Touch 3');
+  }
   generateGraph();
 </script>
 </body>
