@@ -20,33 +20,6 @@
   </header>
 
   <main>
-    <section class="controls" aria-label="Graph configuration">
-
-      <div class="section-label">Configuration</div>
-
-      <div class="form-group">
-        <label for="duration">Timeline duration (seconds)</label>
-        <input type="number" id="duration" value="10" min="1" max="300" step="1"
-               aria-label="Duration in seconds">
-      </div>
-
-      <div class="touches-section">
-        <div class="touches-header">
-          <div class="section-label">Touch Events</div>
-          <button class="btn btn-sm btn-outline" id="btn-add-touch" type="button">+ Add Touch</button>
-        </div>
-        <div id="touches-list" role="list">
-          <div id="no-touches" class="no-touches">No touch events added yet.<br>Click <strong>+ Add Touch</strong> to begin.</div>
-        </div>
-      </div>
-
-      <div class="actions">
-        <button class="btn btn-primary" id="btn-generate" type="button">&#9654; Generate</button>
-        <button class="btn btn-secondary" id="btn-replay" type="button" disabled>&#8635; Replay</button>
-      </div>
-
-    </section>
-
     <section class="graph-area" aria-label="Graph output">
 
       <div class="graph-container">
@@ -69,6 +42,33 @@
                aria-label="Shareable URL">
         <button class="btn btn-sm btn-outline" id="btn-share" type="button">Share</button>
         <button class="btn btn-sm btn-primary" id="btn-copy" type="button">Copy URL</button>
+      </div>
+
+    </section>
+
+    <section class="controls" aria-label="Graph configuration">
+
+      <div class="section-label">Configuration</div>
+
+      <div class="form-group">
+        <label for="duration">Timeline duration (seconds)</label>
+        <input type="number" id="duration" value="6" min="1" max="300" step="1"
+               aria-label="Duration in seconds">
+      </div>
+
+      <div class="touches-section">
+        <div class="touches-header">
+          <div class="section-label">Touch Events</div>
+          <button class="btn btn-sm btn-outline" id="btn-add-touch" type="button">+ Add Touch</button>
+        </div>
+        <div id="touches-list" role="list">
+          <div id="no-touches" class="no-touches">No touch events added yet.<br>Click <strong>+ Add Touch</strong> to begin.</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-generate" type="button">&#9654; Generate</button>
+        <button class="btn btn-secondary" id="btn-replay" type="button" disabled>&#8635; Replay</button>
       </div>
 
     </section>

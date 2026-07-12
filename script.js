@@ -9,7 +9,7 @@
   // State
   // ----------------------------------------------------------
   var config = {
-    duration: 10,
+    duration: 6,
     touches: []
   };
 
@@ -19,6 +19,42 @@
   var animProgress = 0;      // current sample index being drawn
   var SAMPLE_RATE = 200;     // samples per second
   var touchCounter = 0;
+
+  // ----------------------------------------------------------
+  // Layout constants — derived by measuring the reference VAR
+  // broadcast image (grid area 457x138 px, aspect 3.31:1).
+  // ----------------------------------------------------------
+  var GRID_COLS      = 36;    // vertical cells  (~12px spacing in source)
+  var GRID_ROWS      = 11;    // horizontal cells
+  var GRID_MAJOR     = 4;     // heavy gridline every N cells (~48px in source)
+  var BASELINE_FRAC  = 0.80;  // resting waveform line, from top of panel
+  var TOUCH_COLS     = 7;     // a touch spans ~7 columns  (0.195 * width)
+  var PEAK_GAIN      = 0.53;  // intensity 0.9 -> ~0.48 panel-height peak (as measured)
+
+  // Normalized touch envelope traced from the reference waveform.
+  // u = position across the touch (0..1); a = amplitude (0..1, peak = 1).
+  // Captures the sharp attack, jagged crest and stepped decaying tail.
+  var TOUCH_TEMPLATE = [
+    [0.000, 0.000], [0.057, 0.030], [0.113, 0.440], [0.170, 0.850],
+    [0.226, 0.970], [0.283, 1.000], [0.339, 0.965], [0.396, 0.920],
+    [0.457, 0.895], [0.513, 0.800], [0.570, 0.715], [0.626, 0.715],
+    [0.683, 0.635], [0.739, 0.485], [0.796, 0.255], [0.857, 0.210],
+    [0.913, 0.245], [1.000, 0.000]
+  ];
+  var TOUCH_PEAK_U = 0.283;   // where the crest sits within the template
+
+  // Interpolate the template at position u (0..1).
+  function touchEnvelope(u) {
+    if (u <= 0 || u >= 1) return 0;
+    var t = TOUCH_TEMPLATE;
+    for (var i = 1; i < t.length; i++) {
+      if (u <= t[i][0]) {
+        var f = (u - t[i - 1][0]) / (t[i][0] - t[i - 1][0]);
+        return t[i - 1][1] + f * (t[i][1] - t[i - 1][1]);
+      }
+    }
+    return 0;
+  }
 
   // ----------------------------------------------------------
   // Bootstrap
@@ -48,14 +84,17 @@
     document.getElementById('btn-share').addEventListener('click', onShare);
     document.getElementById('btn-copy').addEventListener('click', onCopy);
 
-    // Load from URL if present
+    // Load from URL if present, otherwise show a demo that mirrors the
+    // reference broadcast image: one touch near 72% of the timeline.
     var fromURL = decodeFromURL();
     if (fromURL) {
       config = fromURL;
       populateForm();
       startGenerate();
     } else {
-      drawEmptyGraph();
+      config = { duration: 6, touches: [{ time: 4.32, intensity: 0.9 }] };
+      populateForm();
+      startGenerate();
     }
   });
 
@@ -207,37 +246,31 @@
       return ((seed >>> 0) / 0xffffffff) - 0.5;
     }
 
-    // Baseline: very subtle noise
+    // Baseline: very subtle sensor noise along the resting line
     for (var i = 0; i < n; i++) {
-      data[i] = rand() * 0.035;
+      data[i] = rand() * 0.012;
     }
 
-    // Touch spikes
+    // Each touch is the measured envelope, TOUCH_COLS grid columns wide,
+    // with its crest aligned to the touch time.
+    var colSeconds = config.duration / GRID_COLS;
+    var width      = TOUCH_COLS * colSeconds;      // touch "wavelength" (s)
+
     config.touches.forEach(function (touch) {
-      var t0  = touch.time;
-      var amp = touch.intensity;
-
-      for (var j = 0; j < n; j++) {
-        var t  = j / SAMPLE_RATE;
-        var dt = t - t0;
-
-        // Primary Gaussian spike (sharp: sigma ≈ 0.05 s)
-        var sigma  = 0.05 + (1 - amp) * 0.03;
-        var spike  = amp * Math.exp(-(dt * dt) / (2 * sigma * sigma));
-
-        // Small pre-touch dip (like an ECG P-wave offset)
-        var preDip = -0.1 * amp * Math.exp(-Math.pow(dt + sigma * 2, 2) / (2 * Math.pow(sigma * 0.7, 2)));
-
-        // Post-touch rebound (slight damped oscillation)
-        var rebound = -0.18 * amp * Math.exp(-Math.pow(dt - sigma * 1.8, 2) / (2 * Math.pow(sigma, 2)));
-
-        data[j] += spike + preDip + rebound;
+      var start = touch.time - TOUCH_PEAK_U * width;   // template u=0
+      var s0 = Math.max(0, Math.floor(start * SAMPLE_RATE));
+      var s1 = Math.min(n, Math.ceil((start + width) * SAMPLE_RATE));
+      for (var j = s0; j < s1; j++) {
+        var u = (j / SAMPLE_RATE - start) / width;
+        data[j] += touchEnvelope(u) * touch.intensity * PEAK_GAIN;
       }
     });
 
-    // Clamp
+    // Clamp to the drawable range (headroom above baseline)
+    var head = BASELINE_FRAC;         // room from baseline up to the top
+    var foot = 1 - BASELINE_FRAC;     // room from baseline down
     for (var k = 0; k < n; k++) {
-      data[k] = Math.max(-1, Math.min(1, data[k]));
+      data[k] = Math.max(-foot, Math.min(head, data[k]));
     }
     return data;
   }
@@ -275,207 +308,214 @@
   // ----------------------------------------------------------
   // Drawing
   // ----------------------------------------------------------
+  // Geometry of the centered graphic: a colored frame around a navy grid,
+  // letterboxed to the reference aspect ratio (GRID_COLS : GRID_ROWS).
+  function panelRect(W, H) {
+    var margin = Math.round(Math.min(W, H) * 0.04) + 2;
+    var availW = W - margin * 2;
+    var availH = H - margin * 2;
+    var frame  = Math.max(7, Math.round(availH * 0.075));
+    var aspect = GRID_COLS / GRID_ROWS;
+    var gw = availW - 2 * frame;
+    var gh = availH - 2 * frame;
+    if (gw / gh > aspect) { gw = gh * aspect; } else { gh = gw / aspect; }
+    var ow = gw + 2 * frame, oh = gh + 2 * frame;
+    var ox = (W - ow) / 2, oy = (H - oh) / 2;
+    return {
+      frame: frame,
+      ox: ox, oy: oy, ow: ow, oh: oh,
+      gx: ox + frame, gy: oy + frame, gw: gw, gh: gh
+    };
+  }
+
   function redraw() {
-    drawWaveform(Math.floor(animProgress));
+    drawScene(Math.floor(animProgress));
   }
 
   function drawEmptyGraph() {
-    var W = cssW, H = cssH;
-    ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = '#030305';
-    ctx.fillRect(0, 0, W, H);
-    drawGrid(W, H, config.duration);
-    drawCenterLine(W, H);
-    drawTimeAxis(W, H, config.duration);
+    drawScene(0);
+  }
 
-    ctx.save();
-    ctx.globalAlpha = 0.25;
-    ctx.strokeStyle = '#00d4ff';
-    ctx.lineWidth   = 1.5;
+  function drawScene(upTo) {
+    // Reset the transform and derive the logical drawing size from the backing
+    // store on every frame. This keeps drawing consistent with the canvas size
+    // even if a resize (which clears the transform) races with the animation.
+    dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var W = cssW = Math.max(1, canvas.width  / dpr);
+    var H = cssH = Math.max(1, canvas.height / dpr);
+    var p = panelRect(W, H);
+
+    ctx.clearRect(0, 0, W, H);          // let the grass field show around it
+    drawPanelBackground(p);
+    drawGrid(p);
+    drawWave(p, upTo);
+    drawFrame(p);
+    drawPlayhead(p);
+  }
+
+  function roundRectPath(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
     ctx.beginPath();
-    ctx.moveTo(0, H / 2);
-    ctx.lineTo(W, H / 2);
-    ctx.stroke();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y,     x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x,     y + h, r);
+    ctx.arcTo(x,     y + h, x,     y,     r);
+    ctx.arcTo(x,     y,     x + w, y,     r);
+    ctx.closePath();
+  }
+
+  function drawPanelBackground(p) {
+    ctx.save();
+    var g = ctx.createLinearGradient(0, p.oy, 0, p.oy + p.oh);
+    g.addColorStop(0, '#16241f');
+    g.addColorStop(1, '#0b1517');
+    ctx.fillStyle = g;
+    roundRectPath(p.ox, p.oy, p.ow, p.oh, p.frame * 0.9);
+    ctx.fill();
     ctx.restore();
   }
 
-  function drawWaveform(upTo) {
-    var W    = cssW;
-    var H    = cssH;
-    var midY = H / 2;
-    var amp  = H * 0.38;
-    var dur  = config.duration;
-
-    ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = '#030305';
-    ctx.fillRect(0, 0, W, H);
-
-    drawGrid(W, H, dur);
-    drawCenterLine(W, H);
-
-    if (!waveformData || upTo === 0) {
-      drawTimeAxis(W, H, dur);
-      return;
-    }
-
-    var total = waveformData.length;
-    var pxPerSample = W / total;
-
-    // -- glow pass (thick, dim) --
+  function drawGrid(p) {
     ctx.save();
-    ctx.shadowColor = '#00d4ff';
-    ctx.shadowBlur  = 12;
-    ctx.strokeStyle = '#00d4ff33';
-    ctx.lineWidth   = 4;
-    ctx.lineJoin    = 'round';
-    ctx.beginPath();
-    for (var i = 0; i <= upTo && i < total; i++) {
-      var x = i * pxPerSample;
-      var y = midY - waveformData[i] * amp;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.restore();
+    roundRectPath(p.gx, p.gy, p.gw, p.gh, 2);
+    ctx.clip();
 
-    // -- main line pass --
-    ctx.save();
-    ctx.shadowColor = '#00d4ff';
-    ctx.shadowBlur  = 6;
-    ctx.strokeStyle = '#00d4ff';
-    ctx.lineWidth   = 1.6;
-    ctx.lineJoin    = 'round';
-    ctx.lineCap     = 'round';
-    ctx.beginPath();
-    for (var j = 0; j <= upTo && j < total; j++) {
-      var xj = j * pxPerSample;
-      var yj = midY - waveformData[j] * amp;
-      if (j === 0) ctx.moveTo(xj, yj); else ctx.lineTo(xj, yj);
-    }
-    ctx.stroke();
-    ctx.restore();
-
-    // -- scanning cursor --
-    if (upTo < total) {
-      var scanX = upTo * pxPerSample;
-      ctx.save();
-
-      // Trailing glow
-      var grad = ctx.createLinearGradient(scanX - 40, 0, scanX + 2, 0);
-      grad.addColorStop(0, 'transparent');
-      grad.addColorStop(1, '#00d4ff18');
-      ctx.fillStyle = grad;
-      ctx.fillRect(scanX - 40, 0, 42, H);
-
-      // Cursor line
-      ctx.strokeStyle = '#00d4ffaa';
-      ctx.lineWidth   = 1;
-      ctx.shadowColor = '#00d4ff';
-      ctx.shadowBlur  = 6;
+    // vertical lines
+    for (var c = 0; c <= GRID_COLS; c++) {
+      var x = p.gx + (c / GRID_COLS) * p.gw;
+      var major = (c % GRID_MAJOR === 0);
+      ctx.strokeStyle = major ? 'rgba(126,214,196,0.16)' : 'rgba(126,214,196,0.07)';
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(scanX, 0);
-      ctx.lineTo(scanX, H);
+      ctx.moveTo(Math.round(x) + 0.5, p.gy);
+      ctx.lineTo(Math.round(x) + 0.5, p.gy + p.gh);
       ctx.stroke();
-
-      ctx.restore();
+    }
+    // horizontal lines
+    for (var r = 0; r <= GRID_ROWS; r++) {
+      var y = p.gy + (r / GRID_ROWS) * p.gh;
+      var majorR = (r % GRID_MAJOR === 0);
+      ctx.strokeStyle = majorR ? 'rgba(126,214,196,0.16)' : 'rgba(126,214,196,0.07)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(p.gx, Math.round(y) + 0.5);
+      ctx.lineTo(p.gx + p.gw, Math.round(y) + 0.5);
+      ctx.stroke();
     }
 
-    drawTouchMarkers(W, H, midY, amp, upTo, total);
-    drawTimeAxis(W, H, dur);
+    // small quarter-arc in the bottom-left corner (as in the reference)
+    var baseY = p.gy + BASELINE_FRAC * p.gh;
+    ctx.strokeStyle = 'rgba(169,159,208,0.8)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(p.gx, baseY, p.gh * 0.16, -Math.PI / 2, 0);
+    ctx.stroke();
+
+    ctx.restore();
   }
 
-  function drawGrid(W, H, dur) {
+  function drawWave(p, upTo) {
+    if (!waveformData) return;
+    var total  = waveformData.length;
+    var baseY  = p.gy + BASELINE_FRAC * p.gh;
+
+    function X(i) { return p.gx + (i / total) * p.gw; }
+    function Y(v) { return baseY - v * p.gh; }
+
     ctx.save();
-    ctx.strokeStyle = '#0d0d18';
-    ctx.lineWidth   = 1;
+    roundRectPath(p.gx, p.gy, p.gw, p.gh, 2);
+    ctx.clip();
 
-    // Horizontal lines
-    var hCount = 8;
-    for (var row = 1; row < hCount; row++) {
-      var y = (row / hCount) * H;
+    function tracePath() {
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(W, y);
-      ctx.stroke();
-    }
-
-    // Vertical lines (one per second)
-    if (dur > 0) {
-      var secW = W / dur;
-      for (var s = 1; s < dur; s++) {
-        var x = s * secW;
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, H);
-        ctx.stroke();
+      var started = false;
+      for (var i = 0; i <= upTo && i < total; i++) {
+        var x = X(i), y = Y(waveformData[i]);
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
       }
     }
-    ctx.restore();
-  }
 
-  function drawCenterLine(W, H) {
-    ctx.save();
-    ctx.setLineDash([5, 5]);
-    ctx.strokeStyle = '#18182a';
-    ctx.lineWidth   = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, H / 2);
-    ctx.lineTo(W, H / 2);
+    // glow pass
+    ctx.shadowColor = '#7ff7df';
+    ctx.shadowBlur  = 10;
+    ctx.strokeStyle = 'rgba(147,247,223,0.35)';
+    ctx.lineWidth   = 4;
+    ctx.lineJoin    = 'round';
+    ctx.lineCap     = 'round';
+    tracePath();
     ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
 
-  function drawTimeAxis(W, H, dur) {
-    ctx.save();
-    ctx.fillStyle    = '#33334a';
-    ctx.font         = '10px monospace';
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'bottom';
+    // core line
+    ctx.shadowBlur  = 5;
+    ctx.strokeStyle = '#e9fff9';
+    ctx.lineWidth   = 1.7;
+    tracePath();
+    ctx.stroke();
 
-    var secW  = W / Math.max(1, dur);
-    var step  = 1;
-    // Show fewer labels if too crowded (< 40 px per label)
-    if (secW < 40) step = Math.ceil(40 / secW);
-
-    for (var s = 0; s <= dur; s += step) {
-      var x = s * secW;
-      ctx.fillText(s + 's', x, H - 2);
+    // scanning cursor while recording
+    if (upTo > 0 && upTo < total) {
+      var sx = X(upTo);
+      var grad = ctx.createLinearGradient(sx - 34, 0, sx, 0);
+      grad.addColorStop(0, 'transparent');
+      grad.addColorStop(1, 'rgba(147,247,223,0.12)');
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = grad;
+      ctx.fillRect(sx - 34, p.gy, 34, p.gh);
+      ctx.strokeStyle = 'rgba(233,255,249,0.7)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sx, p.gy);
+      ctx.lineTo(sx, p.gy + p.gh);
+      ctx.stroke();
     }
     ctx.restore();
   }
 
-  function drawTouchMarkers(W, H, midY, amp, upTo, total) {
-    if (!config.touches || config.touches.length === 0) return;
+  // Colored segmented frame (border) around the grid — the broadcast look.
+  function drawFrame(p) {
+    var LAV = '#a99fd0', VIO = '#5b4fc4', ORA = '#cf7d3f', LIM = '#c3e04d';
+    var t = p.frame;
+    var x0 = p.ox, y0 = p.oy, w = p.ow, h = p.oh;
+    // segment boundaries along the width (measured: 0.31 and 0.72)
+    var b1 = x0 + w * 0.31;
+    var b2 = x0 + w * 0.72;
 
     ctx.save();
-    config.touches.forEach(function (touch) {
-      var sampleAtTouch = Math.floor(touch.time * SAMPLE_RATE);
-      if (sampleAtTouch > upTo) return;
+    // left & right vertical edges
+    ctx.fillStyle = LAV; ctx.fillRect(x0, y0, t, h);
+    ctx.fillStyle = LIM; ctx.fillRect(x0 + w - t, y0, t, h);
+    // top edge: lavender | violet | lime
+    ctx.fillStyle = LAV; ctx.fillRect(x0, y0, b1 - x0, t);
+    ctx.fillStyle = VIO; ctx.fillRect(b1, y0, b2 - b1, t);
+    ctx.fillStyle = LIM; ctx.fillRect(b2, y0, x0 + w - b2, t);
+    // bottom edge: lavender | orange | lime
+    var yb = y0 + h - t;
+    ctx.fillStyle = LAV; ctx.fillRect(x0, yb, b1 - x0, t);
+    ctx.fillStyle = ORA; ctx.fillRect(b1, yb, b2 - b1, t);
+    ctx.fillStyle = LIM; ctx.fillRect(b2, yb, x0 + w - b2, t);
 
-      var x = (touch.time / config.duration) * W;
+    // subtle outer highlight
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1;
+    roundRectPath(x0 + 0.5, y0 + 0.5, w - 1, h - 1, p.frame * 0.9);
+    ctx.stroke();
+    ctx.restore();
+  }
 
-      // Marker vertical line (dashed red)
-      ctx.setLineDash([3, 4]);
-      ctx.strokeStyle = '#ff4d4d55';
-      ctx.lineWidth   = 1;
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, H);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Time label above
-      ctx.fillStyle    = '#ff7070';
-      ctx.font         = 'bold 9px monospace';
-      ctx.textAlign    = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillText(touch.time.toFixed(1) + 's', x, 4);
-
-      // Intensity tick below the waveform centre
-      var barH = touch.intensity * amp * 0.55;
-      ctx.fillStyle = '#ff4d4d30';
-      ctx.fillRect(x - 1, midY + 1, 2, barH);
-    });
+  // Central white playhead / scrubber line.
+  function drawPlayhead(p) {
+    var x = p.ox + p.ow / 2;
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,255,255,0.5)';
+    ctx.shadowBlur  = 4;
+    ctx.strokeStyle = '#f2fbff';
+    ctx.lineWidth   = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, p.oy);
+    ctx.lineTo(x, p.oy + p.oh);
+    ctx.stroke();
     ctx.restore();
   }
 
