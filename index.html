@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VAR Touch Sensor Graph</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #06101e;
+      color: #c8daea;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    header h1 {
+      font-size: 1.4em;
+      font-weight: 700;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: #FFD700;
+    }
+    header p {
+      margin-top: 4px;
+      font-size: 0.78em;
+      color: #4a7090;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .app {
+      max-width: 960px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* ── Control Panel ── */
+    .panel {
+      background: #0b1a2b;
+      border: 1px solid #1a3352;
+      border-radius: 10px;
+      padding: 18px 20px;
+    }
+
+    .panel-title {
+      font-size: 0.7em;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #4a7090;
+      margin-bottom: 14px;
+    }
+
+    .row {
+      display: flex;
+      gap: 16px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .field label {
+      font-size: 0.72em;
+      color: #5a8ab0;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    input[type="number"], input[type="text"], select {
+      background: #07111e;
+      border: 1px solid #1a3352;
+      color: #e0f0ff;
+      padding: 7px 10px;
+      border-radius: 5px;
+      font-size: 0.88em;
+      outline: none;
+      transition: border-color .2s;
+    }
+    input[type="number"]:focus,
+    input[type="text"]:focus,
+    select:focus {
+      border-color: #FFD700;
+    }
+    input[type="number"] { width: 90px; }
+    input[type="text"]   { width: 130px; }
+
+    /* ── Touch entries ── */
+    #touchList {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .touch-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      background: #07111e;
+      border: 1px solid #132235;
+      border-radius: 6px;
+      padding: 10px 12px;
+      flex-wrap: wrap;
+    }
+    .touch-badge {
+      font-size: 0.72em;
+      font-weight: 700;
+      color: #FFD700;
+      background: #1a2e00;
+      border: 1px solid #FFD700;
+      border-radius: 50%;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      align-self: center;
+      margin-bottom: 2px;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.82em;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-gold   { background: #FFD700; color: #07111e; }
+    .btn-outline { background: transparent; border: 1px solid #1a3352; color: #5a8ab0; }
+    .btn-outline:hover { border-color: #3a6a9a; color: #8ab4d4; }
+    .btn-remove {
+      background: transparent;
+      border: 1px solid #3a1e1e;
+      color: #b04040;
+      padding: 5px 9px;
+      font-size: 0.75em;
+      border-radius: 4px;
+      cursor: pointer;
+      align-self: center;
+      margin-bottom: 2px;
+    }
+    .btn-remove:hover { border-color: #b04040; }
+
+    .action-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Graph ── */
+    .graph-panel {
+      background: #040d18;
+      border: 1px solid #1a3352;
+      border-radius: 10px;
+      padding: 20px 20px 14px;
+      position: relative;
+    }
+
+    #graphCanvas {
+      display: block;
+      width: 100%;
+      border-radius: 4px;
+    }
+
+    /* ── Playback controls ── */
+    .playback {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+      padding-top: 4px;
+    }
+    .playback .field { flex-direction: row; align-items: center; gap: 8px; }
+    .playback .field label { margin: 0; }
+
+    select { width: 80px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      .touch-row { gap: 8px; }
+      input[type="number"] { width: 70px; }
+      input[type="text"]   { width: 100px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚽ VAR Touch Sensor</h1>
+  <p>Ball impact waveform visualizer</p>
+</header>
+
+<div class="app">
+
+  <!-- ── Control panel ── -->
+  <div class="panel">
+    <div class="panel-title">Configuration</div>
+
+    <div class="row">
+      <div class="field">
+        <label>Wave duration (s)</label>
+        <input type="number" id="duration" value="6" min="1" max="60" step="0.5">
+      </div>
+    </div>
+
+    <div class="panel-title" style="margin-top:8px;">Touch Events</div>
+    <div id="touchList"></div>
+
+    <div class="action-row">
+      <button class="btn btn-outline" onclick="addTouch()">+ Add Touch</button>
+      <button class="btn btn-gold" style="margin-left:auto" onclick="generateGraph()">Generate Graph</button>
+    </div>
+  </div>
+
+  <!-- ── Graph panel ── -->
+  <div class="graph-panel">
+    <canvas id="graphCanvas" height="220"></canvas>
+  </div>
+
+  <!-- ── Playback controls ── -->
+  <div class="playback">
+    <button class="btn btn-outline" id="playBtn" onclick="togglePlay()">▶ Play</button>
+    <button class="btn btn-outline" onclick="resetPlayback()">↺ Reset</button>
+    <div class="field">
+      <label style="font-size:.72em;color:#5a8ab0;letter-spacing:1px;text-transform:uppercase;">Speed</label>
+      <select id="speedSelect" onchange="speed = parseFloat(this.value)">
+        <option value="0.25">0.25×</option>
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="5">5×</option>
+      </select>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  /* ─── State ─────────────────────────────────────── */
+  let touchSeq    = 0;
+  let config      = null;   // { duration, touches }
+  let currentTime = 0;
+  let isPlaying   = false;
+  let animId      = null;
+  let lastTS      = null;
+  let speed       = 1;
+
+  /* ─── Signal model ──────────────────────────────── */
+  //  Each touch produces a damped sinusoidal burst
+  //    f(t) = A · sin(2π·freq·(t−t₀)) · exp(−k·(t−t₀)²)
+  //  Parameters chosen for a visually compelling broadcast look.
+  const FREQ  = 9;   // oscillation frequency (Hz)
+  const DECAY = 16;  // Gaussian decay rate (larger → tighter burst)
+
+  function touchSignal(t, t0, intensity) {
+    const dt = t - t0;
+    const A  = intensity / 100;
+    return A * Math.sin(2 * Math.PI * FREQ * dt) * Math.exp(-DECAY * dt * dt);
+  }
+
+  function computeSignal(t, touches) {
+    return touches.reduce((sum, touch) => sum + touchSignal(t, touch.time, touch.intensity), 0);
+  }
+
+  /* ─── Touch UI ──────────────────────────────────── */
+  function addTouch(timeVal = '', intensityVal = 60, labelVal = '') {
+    touchSeq++;
+    const id  = touchSeq;
+    const row = document.createElement('div');
+    row.className = 'touch-row';
+    row.id = `tr-${id}`;
+    row.innerHTML = `
+      <span class="touch-badge">${id}</span>
+      <div class="field">
+        <label>Time (s)</label>
+        <input type="number" class="t-time" value="${timeVal}" min="0" step="0.1">
+      </div>
+      <div class="field">
+        <label>Intensity (1–100)</label>
+        <input type="number" class="t-intensity" value="${intensityVal}" min="1" max="100">
+      </div>
+      <div class="field">
+        <label>Label (optional)</label>
+        <input type="text" class="t-label" value="${labelVal}" placeholder="e.g. Handball">
+      </div>
+      <button class="btn-remove" title="Remove" onclick="removeTouchRow(${id})">✕</button>`;
+    document.getElementById('touchList').appendChild(row);
+  }
+
+  function removeTouchRow(id) {
+    const el = document.getElementById(`tr-${id}`);
+    if (el) el.remove();
+  }
+
+  function getTouches() {
+    return Array.from(document.querySelectorAll('.touch-row'))
+      .map(row => ({
+        time:      parseFloat(row.querySelector('.t-time').value)      || 0,
+        intensity: parseFloat(row.querySelector('.t-intensity').value) || 50,
+        label:     row.querySelector('.t-label').value.trim()
+      }))
+      .sort((a, b) => a.time - b.time);
+  }
+
+  /* ─── Graph rendering ───────────────────────────── */
+  function getCanvas() { return document.getElementById('graphCanvas'); }
+
+  // Precomputed samples (filled on generateGraph)
+  let samples    = [];
+  let maxAmp     = 1;
+  const N_SAMPLES = 3000;
+
+  function generateGraph() {
+    stopPlayback();
+    const duration = Math.max(0.5, parseFloat(document.getElementById('duration').value) || 6);
+    const touches  = getTouches();
+    config = { duration, touches };
+
+    // Pre-compute signal samples
+    samples = new Float32Array(N_SAMPLES + 1);
+    maxAmp  = 0.001;
+    for (let i = 0; i <= N_SAMPLES; i++) {
+      const t = (i / N_SAMPLES) * duration;
+      const v = computeSignal(t, touches);
+      samples[i] = v;
+      if (Math.abs(v) > maxAmp) maxAmp = Math.abs(v);
+    }
+
+    currentTime = 0;
+    drawFrame(1); // show full graph immediately
+  }
+
+  function drawFrame(progress) {
+    if (!config) return;
+    const canvas = getCanvas();
+    const ctx    = canvas.getContext('2d');
+    const { duration, touches } = config;
+
+    // Physical pixel size
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = canvas.parentElement.clientWidth - 40;
+    const cssH = 220;
+    canvas.width  = cssW * dpr;
+    canvas.height = cssH * dpr;
+    canvas.style.width  = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    ctx.scale(dpr, dpr);
+
+    const W = cssW, H = cssH;
+    const ML = 54, MR = 16, MT = 28, MB = 34;
+    const GW = W - ML - MR;
+    const GH = H - MT - MB;
+    const CY = MT + GH / 2;
+
+    /* background */
+    ctx.fillStyle = '#040d18';
+    ctx.fillRect(0, 0, W, H);
+
+    /* subtle grid */
+    ctx.strokeStyle = '#0c1e30';
+    ctx.lineWidth   = 1;
+    [0.25, 0.5, 0.75, 1].forEach(f => {
+      const y = MT + GH * f;
+      ctx.beginPath(); ctx.moveTo(ML, y); ctx.lineTo(ML + GW, y); ctx.stroke();
+    });
+
+    const tStep = smartTimeStep(duration);
+    ctx.font      = '11px monospace';
+    ctx.fillStyle = '#2a5070';
+    ctx.textAlign = 'center';
+    for (let t = 0; t <= duration + 1e-9; t = +(t + tStep).toFixed(6)) {
+      const x = ML + (t / duration) * GW;
+      if (x > ML + GW + 1) break;
+      ctx.strokeStyle = '#0c1e30';
+      ctx.lineWidth   = 1;
+      ctx.beginPath(); ctx.moveTo(x, MT); ctx.lineTo(x, MT + GH); ctx.stroke();
+      ctx.fillText(t.toFixed(tStep < 1 ? 1 : 0) + 's', x, H - MB + 16);
+    }
+
+    /* center baseline */
+    ctx.strokeStyle = '#1a3a5a';
+    ctx.lineWidth   = 1.2;
+    ctx.beginPath(); ctx.moveTo(ML, CY); ctx.lineTo(ML + GW, CY); ctx.stroke();
+
+    /* Y-axis label */
+    ctx.save();
+    ctx.font      = '10px monospace';
+    ctx.fillStyle = '#2a5070';
+    ctx.textAlign = 'center';
+    ctx.translate(13, CY);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('IMPACT', 0, 0);
+    ctx.restore();
+
+    /* touch markers */
+    const progressTime = progress * duration;
+    touches.forEach(touch => {
+      if (touch.time > progressTime + 0.001) return;
+      const tx = ML + (touch.time / duration) * GW;
+
+      ctx.strokeStyle = 'rgba(255,215,0,0.25)';
+      ctx.lineWidth   = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(tx, MT); ctx.lineTo(tx, MT + GH); ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (touch.label) {
+        ctx.font      = 'bold 10px Arial';
+        ctx.fillStyle = 'rgba(255,215,0,0.75)';
+        ctx.textAlign = 'center';
+        ctx.fillText(touch.label, tx, MT - 8);
+      }
+
+      // touch dot on center line
+      ctx.beginPath();
+      ctx.arc(tx, CY, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#FFD700';
+      ctx.fill();
+    });
+
+    /* waveform up to progressTime */
+    const limitX = ML + progress * GW;
+    const scale  = (GH / 2) * 0.82 / maxAmp;
+
+    // fill path (gradient below/above center line)
+    const fillGrad = ctx.createLinearGradient(0, MT, 0, MT + GH);
+    fillGrad.addColorStop(0,   'rgba(255,215,0,0.12)');
+    fillGrad.addColorStop(0.5, 'rgba(255,215,0,0.0)');
+    fillGrad.addColorStop(1,   'rgba(255,215,0,0.12)');
+
+    ctx.save();
+    ctx.rect(ML, MT, limitX - ML, GH);
+    ctx.clip();
+
+    // fill
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i <= N_SAMPLES; i++) {
+      const t = (i / N_SAMPLES) * duration;
+      const x = ML + (t / duration) * GW;
+      const y = CY - samples[i] * scale;
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else            ctx.lineTo(x, y);
+    }
+    ctx.lineTo(ML + GW, CY);
+    ctx.lineTo(ML, CY);
+    ctx.closePath();
+    ctx.fillStyle = fillGrad;
+    ctx.fill();
+
+    // glow layers (outer → inner)
+    [
+      { lw: 10, alpha: 0.04 },
+      { lw: 6,  alpha: 0.10 },
+      { lw: 3,  alpha: 0.35 },
+      { lw: 1.5,alpha: 0.90 },
+    ].forEach(({ lw, alpha }) => {
+      ctx.beginPath();
+      started = false;
+      for (let i = 0; i <= N_SAMPLES; i++) {
+        const t = (i / N_SAMPLES) * duration;
+        const x = ML + (t / duration) * GW;
+        const y = CY - samples[i] * scale;
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else            ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = `rgba(255,215,0,${alpha})`;
+      ctx.lineWidth   = lw;
+      ctx.stroke();
+    });
+
+    ctx.restore();
+
+    /* playback cursor */
+    if (progress > 0 && progress < 1) {
+      const cx = ML + progress * GW;
+      ctx.strokeStyle = 'rgba(255,100,80,0.75)';
+      ctx.lineWidth   = 1.2;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(cx, MT); ctx.lineTo(cx, MT + GH); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    /* graph border */
+    ctx.strokeStyle = '#1a3352';
+    ctx.lineWidth   = 1;
+    ctx.strokeRect(ML, MT, GW, GH);
+
+    /* time cursor label */
+    if (progress > 0 && progress < 1) {
+      const cx = ML + progress * GW;
+      const elapsed = (progress * duration).toFixed(2);
+      ctx.font      = '10px monospace';
+      ctx.fillStyle = 'rgba(255,100,80,0.85)';
+      ctx.textAlign = cx > ML + GW / 2 ? 'right' : 'left';
+      ctx.fillText(elapsed + 's', cx + (ctx.textAlign === 'right' ? -4 : 4), MT + 12);
+    }
+  }
+
+  function smartTimeStep(dur) {
+    if (dur <= 5)  return 0.5;
+    if (dur <= 10) return 1;
+    if (dur <= 20) return 2;
+    if (dur <= 60) return 5;
+    return 10;
+  }
+
+  /* ─── Playback ──────────────────────────────────── */
+  function togglePlay() {
+    if (isPlaying) stopPlayback(); else startPlayback();
+  }
+
+  function startPlayback() {
+    if (!config) return;
+    if (currentTime >= config.duration) currentTime = 0;
+    isPlaying = true;
+    lastTS    = null;
+    document.getElementById('playBtn').textContent = '⏸ Pause';
+    animId = requestAnimationFrame(animLoop);
+  }
+
+  function stopPlayback() {
+    isPlaying = false;
+    document.getElementById('playBtn').textContent = '▶ Play';
+    if (animId) { cancelAnimationFrame(animId); animId = null; }
+  }
+
+  function resetPlayback() {
+    stopPlayback();
+    currentTime = 0;
+    if (config) drawFrame(0);
+  }
+
+  function animLoop(ts) {
+    if (!isPlaying) return;
+    if (!lastTS) lastTS = ts;
+    const dt = (ts - lastTS) / 1000;
+    lastTS = ts;
+    currentTime += dt * speed;
+
+    if (currentTime >= config.duration) {
+      currentTime = config.duration;
+      drawFrame(1);
+      stopPlayback();
+      return;
+    }
+    drawFrame(currentTime / config.duration);
+    animId = requestAnimationFrame(animLoop);
+  }
+
+  /* ─── Resize ────────────────────────────────────── */
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (config) drawFrame(currentTime / config.duration);
+    }, 80);
+  });
+
+  /* ─── Bootstrap ─────────────────────────────────── */
+  addTouch(1.5, 65, 'Touch 1');
+  addTouch(3.2, 88, 'Handball');
+  addTouch(4.8, 55, 'Touch 3');
+  generateGraph();
+</script>
+</body>
+</html>
