@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VAR Touch Sensor Graph</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header>
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-var">VAR</span>
+        <span class="logo-sep">|</span>
+        <span class="logo-title">Touch Sensor Graph</span>
+      </div>
+      <div class="logo-sub">Ball contact detection visualizer</div>
+    </div>
+  </header>
+
+  <main>
+    <section class="controls" aria-label="Graph configuration">
+
+      <div class="section-label">Configuration</div>
+
+      <div class="form-group">
+        <label for="duration">Timeline duration (seconds)</label>
+        <input type="number" id="duration" value="10" min="1" max="300" step="1"
+               aria-label="Duration in seconds">
+      </div>
+
+      <div class="touches-section">
+        <div class="touches-header">
+          <div class="section-label">Touch Events</div>
+          <button class="btn btn-sm btn-outline" id="btn-add-touch" type="button">+ Add Touch</button>
+        </div>
+        <div id="touches-list" role="list">
+          <div id="no-touches" class="no-touches">No touch events added yet.<br>Click <strong>+ Add Touch</strong> to begin.</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-generate" type="button">&#9654; Generate</button>
+        <button class="btn btn-secondary" id="btn-replay" type="button" disabled>&#8635; Replay</button>
+      </div>
+
+    </section>
+
+    <section class="graph-area" aria-label="Graph output">
+
+      <div class="graph-container">
+        <div class="graph-header">
+          <div class="graph-title">SENSOR OUTPUT</div>
+          <div class="graph-status">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-text">Ready</span>
+          </div>
+        </div>
+        <canvas id="graph-canvas" role="img" aria-label="VAR touch sensor waveform"></canvas>
+      </div>
+
+      <div class="share-bar">
+        <span class="share-label">Share:</span>
+        <input type="text" id="share-url" class="share-url" readonly
+               placeholder="Generate a graph first, then click Share"
+               aria-label="Shareable URL">
+        <button class="btn btn-sm btn-outline" id="btn-share" type="button">Share</button>
+        <button class="btn btn-sm btn-primary" id="btn-copy" type="button">Copy URL</button>
+      </div>
+
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
