@@ -351,7 +351,6 @@
     drawGrid(p);
     drawWave(p, upTo);
     drawFrame(p);
-    drawPlayhead(p);
   }
 
   function roundRectPath(x, y, w, h, r) {
@@ -420,7 +419,10 @@
     var total  = waveformData.length;
     var baseY  = p.gy + BASELINE_FRAC * p.gh;
 
-    function X(i) { return p.gx + (i / total) * p.gw; }
+    function X(i) {
+      if (total <= 1) return p.gx + p.gw;
+      return p.gx + ((total - 1 - i) / (total - 1)) * p.gw;
+    }
     function Y(v) { return baseY - v * p.gh; }
 
     ctx.save();
@@ -457,18 +459,12 @@
     // scanning cursor while recording
     if (upTo > 0 && upTo < total) {
       var sx = X(upTo);
-      var grad = ctx.createLinearGradient(sx - 34, 0, sx, 0);
+      var grad = ctx.createLinearGradient(sx, 0, sx + 34, 0);
       grad.addColorStop(0, 'transparent');
       grad.addColorStop(1, 'rgba(147,247,223,0.12)');
       ctx.shadowBlur = 0;
       ctx.fillStyle = grad;
-      ctx.fillRect(sx - 34, p.gy, 34, p.gh);
-      ctx.strokeStyle = 'rgba(233,255,249,0.7)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(sx, p.gy);
-      ctx.lineTo(sx, p.gy + p.gh);
-      ctx.stroke();
+      ctx.fillRect(sx, p.gy, 34, p.gh);
     }
     ctx.restore();
   }
