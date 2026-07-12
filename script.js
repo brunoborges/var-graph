@@ -417,11 +417,12 @@
   function drawWave(p, upTo) {
     if (!waveformData) return;
     var total  = waveformData.length;
+    var end    = Math.min(upTo, total - 1);
     var baseY  = p.gy + BASELINE_FRAC * p.gh;
 
     function X(i) {
       if (total <= 1) return p.gx + p.gw;
-      return p.gx + ((total - 1 - i) / (total - 1)) * p.gw;
+      return p.gx + p.gw - ((end - i) / (total - 1)) * p.gw;
     }
     function Y(v) { return baseY - v * p.gh; }
 
@@ -432,7 +433,7 @@
     function tracePath() {
       ctx.beginPath();
       var started = false;
-      for (var i = 0; i <= upTo && i < total; i++) {
+      for (var i = 0; i <= end; i++) {
         var x = X(i), y = Y(waveformData[i]);
         if (!started) { ctx.moveTo(x, y); started = true; }
         else ctx.lineTo(x, y);
@@ -457,14 +458,14 @@
     ctx.stroke();
 
     // scanning cursor while recording
-    if (upTo > 0 && upTo < total) {
-      var sx = X(upTo);
-      var grad = ctx.createLinearGradient(sx, 0, sx + 34, 0);
+    if (end > 0 && end < total) {
+      var sx = X(end);
+      var grad = ctx.createLinearGradient(sx - 34, 0, sx, 0);
       grad.addColorStop(0, 'transparent');
       grad.addColorStop(1, 'rgba(147,247,223,0.12)');
       ctx.shadowBlur = 0;
       ctx.fillStyle = grad;
-      ctx.fillRect(sx, p.gy, 34, p.gh);
+      ctx.fillRect(sx - 34, p.gy, 34, p.gh);
     }
     ctx.restore();
   }
