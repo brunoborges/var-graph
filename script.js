@@ -67,15 +67,17 @@
 
   function resizeCanvas() {
     dpr  = window.devicePixelRatio || 1;
-    var rect = canvas.parentElement.getBoundingClientRect();
-    // Reserve ~14px top for graph header (already rendered in DOM above canvas)
-    cssW = Math.max(1, Math.floor(rect.width  - 2));  // 1px padding each side
-    cssH = Math.max(1, Math.floor(rect.height - 56)); // header + padding
+    // The canvas fills its wrapper via CSS (position:absolute; inset:0), so we
+    // read the size flexbox already gave it. We must NOT write canvas.style
+    // width/height here: the canvas would otherwise feed its own height back
+    // into the parent's layout, and the ResizeObserver watching that parent
+    // would re-trigger this function endlessly (the graph "grows forever" bug).
+    cssW = Math.max(1, Math.floor(canvas.clientWidth));
+    cssH = Math.max(1, Math.floor(canvas.clientHeight));
     canvas.width  = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
-    canvas.style.width  = cssW + 'px';
-    canvas.style.height = cssH + 'px';
-    ctx.scale(dpr, dpr);
+    // Map logical (CSS px) drawing coordinates onto the HiDPI backing store.
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   // ----------------------------------------------------------
