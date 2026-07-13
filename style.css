@@ -478,6 +478,7 @@ main {
   flex-wrap: wrap;
   width: 100%;
   max-width: 760px;
+  align-self: center;
 }
 
 .share-label {
