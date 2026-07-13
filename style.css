@@ -371,6 +371,7 @@ main {
 .actions {
   display: flex;
   gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 /* === Graph Area === */

@@ -21,6 +21,12 @@
   var SAMPLE_RATE = 200;     // samples per second
   var touchCounter = 0;
 
+  // GIF export settings
+  var EXPORT_FPS       = 25;      // frames per second in the exported GIF
+  var EXPORT_MAX_WIDTH = 720;     // cap output width (px) to keep file size sane
+  var GRASS_BG         = '#4c7a32'; // fills the transparent frame around the panel
+  var isExporting      = false;
+
   // ----------------------------------------------------------
   // Layout constants — derived by measuring the reference VAR
   // broadcast image (grid area 457x138 px, aspect 3.31:1).
@@ -90,6 +96,7 @@
     });
     document.getElementById('btn-generate').addEventListener('click', onGenerate);
     document.getElementById('btn-replay').addEventListener('click', onReplay);
+    document.getElementById('btn-export-gif').addEventListener('click', onExportGif);
     document.getElementById('btn-share').addEventListener('click', onShare);
     document.getElementById('btn-copy').addEventListener('click', onCopy);
 
@@ -236,6 +243,7 @@
     updateShareURL();
     setStatus('active', 'Replaying\u2026');
     document.getElementById('btn-replay').disabled = true;
+    if (!isExporting) document.getElementById('btn-export-gif').disabled = false;
     runAnimation();
   }
 
@@ -641,6 +649,137 @@
     toastTimer = setTimeout(function () {
       el.classList.remove('show');
     }, 3000);
+  }
+
+  // ----------------------------------------------------------
+  // GIF export
+  // ----------------------------------------------------------
+  // The animation is fully deterministic — every frame is drawScene(t) for a
+  // given time — so we render the timeline frame by frame offline (as fast as
+  // the CPU allows) and hand each frame to gif.js for encoding. No real-time
+  // screen capture needed.
+  function onExportGif() {
+    if (isExporting) return;
+    if (!waveformData) { showToast('Generate a graph first.'); return; }
+    if (typeof GIF === 'undefined') {
+      showToast('GIF encoder failed to load.');
+      return;
+    }
+
+    isExporting = true;
+    stopAnimation();
+    isAnimating = false;
+
+    var exportBtn = document.getElementById('btn-export-gif');
+    var genBtn    = document.getElementById('btn-generate');
+    var replayBtn = document.getElementById('btn-replay');
+    exportBtn.disabled = true;
+    genBtn.disabled    = true;
+    replayBtn.disabled = true;
+
+    setStatus('active', 'Rendering GIF\u2026');
+
+    // Defer so the status text repaints before the (blocking) frame capture.
+    setTimeout(function () {
+      renderGif(exportBtn, genBtn, replayBtn);
+    }, 30);
+  }
+
+  function renderGif(exportBtn, genBtn, replayBtn) {
+    var savedPresent = presentTime;
+
+    // Output size: cap the width for a reasonable file size, keep the aspect.
+    var srcW  = canvas.width;
+    var srcH  = canvas.height;
+    var outW  = Math.min(srcW, EXPORT_MAX_WIDTH);
+    var scale = outW / srcW;
+    var outH  = Math.max(1, Math.round(srcH * scale));
+
+    var tmp = document.createElement('canvas');
+    tmp.width  = outW;
+    tmp.height = outH;
+    var tctx = tmp.getContext('2d');
+
+    var duration    = Math.max(0.1, config.duration);
+    var totalFrames = Math.max(2, Math.round(duration * EXPORT_FPS));
+    var delay       = Math.round(1000 / EXPORT_FPS);
+
+    var gif = new GIF({
+      workers: 2,
+      quality: 10,
+      width: outW,
+      height: outH,
+      repeat: 0,            // 0 = loop forever
+      workerScript: new URL('vendor/gif.worker.js', document.baseURI).href
+    });
+
+    // Capture frames at evenly spaced times over [0, duration) so the loop is
+    // seamless. Each frame is rendered on the real canvas, then downscaled onto
+    // a grass-filled temp canvas (the panel has transparent rounded corners).
+    for (var i = 0; i < totalFrames; i++) {
+      var t = (i / totalFrames) * duration;
+      drawScene(t);
+      tctx.fillStyle = GRASS_BG;
+      tctx.fillRect(0, 0, outW, outH);
+      tctx.drawImage(canvas, 0, 0, srcW, srcH, 0, 0, outW, outH);
+      gif.addFrame(tctx, { copy: true, delay: delay });
+    }
+
+    gif.on('progress', function (ratio) {
+      setStatus('active', 'Encoding GIF\u2026 ' + Math.round(ratio * 100) + '%');
+    });
+
+    gif.on('finished', function (blob) {
+      downloadBlob(blob, gifFileName());
+      finishExport(exportBtn, genBtn, replayBtn, savedPresent);
+      setStatus('done', 'GIF ready');
+      showToast('GIF downloaded (' + formatBytes(blob.size) + ').');
+    });
+
+    gif.on('abort', function () {
+      finishExport(exportBtn, genBtn, replayBtn, savedPresent);
+      setStatus('done', 'GIF cancelled');
+    });
+
+    try {
+      gif.render();
+    } catch (e) {
+      finishExport(exportBtn, genBtn, replayBtn, savedPresent);
+      setStatus('done', 'GIF failed');
+      showToast('Could not encode GIF.');
+    }
+  }
+
+  function finishExport(exportBtn, genBtn, replayBtn, savedPresent) {
+    isExporting = false;
+    exportBtn.disabled = false;
+    genBtn.disabled    = false;
+    replayBtn.disabled = false;
+    // Restore the on-screen graph to its pre-export frame.
+    presentTime = savedPresent;
+    redraw();
+  }
+
+  function gifFileName() {
+    var stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    return 'var-touch-graph-' + stamp + '.gif';
+  }
+
+  function downloadBlob(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function formatBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+    return (n / (1024 * 1024)).toFixed(1) + ' MB';
   }
 
 })();
