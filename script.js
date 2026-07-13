@@ -17,6 +17,7 @@
   var animationId = null;
   var waveformData = null;
   var animProgress = 0;      // current sample index being drawn
+  var ANIMATION_DURATION_MS = 4000;
   var SAMPLE_RATE = 200;     // samples per second
   var touchCounter = 0;
 
@@ -279,13 +280,13 @@
   // Animation loop
   // ----------------------------------------------------------
   function runAnimation() {
-    // Target animation duration: 4 s (clamped between 2 and 8)
-    var animSecs = Math.max(2, Math.min(8, config.duration * 0.45));
-    var totalFrames  = animSecs * 60;
-    var samplesPerFrame = Math.max(1, waveformData.length / totalFrames);
+    var startTime = null;
 
-    function frame() {
-      animProgress = Math.min(animProgress + samplesPerFrame, waveformData.length);
+    function frame(timestamp) {
+      if (startTime === null) startTime = timestamp;
+      var elapsed = timestamp - startTime;
+      var progress = Math.min(elapsed / ANIMATION_DURATION_MS, 1);
+      animProgress = progress * waveformData.length;
       redraw();
       if (animProgress < waveformData.length) {
         animationId = requestAnimationFrame(frame);
