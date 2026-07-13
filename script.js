@@ -18,7 +18,6 @@
   var waveformData = null;
   var presentTime = 0;       // the "present moment" (s) sitting on the centre playhead
   var isAnimating = false;
-  var ANIMATION_DURATION_MS = 4000;
   var SAMPLE_RATE = 200;     // samples per second
   var touchCounter = 0;
 
@@ -286,13 +285,17 @@
   // (present), and recede to the left (past) — the VAR replay look.
   function runAnimation() {
     var startTime = null;
-    var endTarget = config.duration;
+    // Play back in real time: the present moment advances one second per real
+    // second, so a touch configured at time T crosses the centre playhead
+    // exactly T seconds into the replay, and the whole timeline takes
+    // config.duration seconds to sweep past.
+    var totalMs = Math.max(1, config.duration) * 1000;
 
     function frame(timestamp) {
       if (startTime === null) startTime = timestamp;
       var elapsed  = timestamp - startTime;
-      var progress = Math.min(elapsed / ANIMATION_DURATION_MS, 1);
-      presentTime  = progress * endTarget;
+      var progress = Math.min(elapsed / totalMs, 1);
+      presentTime  = progress * config.duration;
       redraw();
       if (progress < 1) {
         animationId = requestAnimationFrame(frame);
