@@ -1,3 +1,6 @@
 
 # impeccable design hook local cache
 .impeccable/
+
+# Python bytecode cache (from serve.py)
+__pycache__/

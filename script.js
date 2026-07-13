@@ -32,6 +32,14 @@
   var TOUCH_COLS     = 7;     // a touch spans ~7 columns  (0.195 * width)
   var PEAK_GAIN      = 0.53;  // intensity 0.9 -> ~0.48 panel-height peak (as measured)
 
+  // Fixed horizontal time scale. Each grid column represents a constant number
+  // of seconds, independent of the configured duration, so the trace always
+  // scrolls at the same speed. A touch therefore keeps a constant on-screen
+  // width and enters from the right edge, reaching the centre playhead exactly
+  // at its configured time — no matter how long the total timeline is.
+  var VISIBLE_SECONDS = 6;                          // seconds shown across the panel width
+  var SECONDS_PER_COL = VISIBLE_SECONDS / GRID_COLS;
+
   // Normalized touch envelope traced from the reference waveform.
   // u = position across the touch (0..1); a = amplitude (0..1, peak = 1).
   // Captures the sharp attack, jagged crest and stepped decaying tail.
@@ -150,7 +158,7 @@
         '<div class="touch-field">' +
           '<label for="t-int-' + idx + '">Intensity</label>' +
           '<input id="t-int-' + idx + '" type="number" class="touch-intensity" ' +
-                 'min="0.05" max="1" step="0.05" value="' + iVal + '" placeholder="0.8">' +
+                 'min="0" max="1" step="any" value="' + iVal + '" placeholder="0.8">' +
         '</div>' +
       '</div>' +
       '<button class="touch-delete" title="Remove touch" aria-label="Remove touch event">&#10005;</button>';
@@ -180,10 +188,10 @@
     document.querySelectorAll('.touch-item').forEach(function (item) {
       var t = parseFloat(item.querySelector('.touch-time').value);
       var i = parseFloat(item.querySelector('.touch-intensity').value);
-      if (!isNaN(t) && !isNaN(i)) {
+      if (!isNaN(t) && !isNaN(i) && i > 0) {
         config.touches.push({
           time: Math.max(0, Math.min(config.duration, t)),
-          intensity: Math.max(0.05, Math.min(1, i))
+          intensity: Math.min(1, i)
         });
       }
     });
@@ -253,9 +261,9 @@
     }
 
     // Each touch is the measured envelope, TOUCH_COLS grid columns wide,
-    // with its crest aligned to the touch time.
-    var colSeconds = config.duration / GRID_COLS;
-    var width      = TOUCH_COLS * colSeconds;      // touch "wavelength" (s)
+    // with its crest aligned to the touch time. The width is a fixed number of
+    // seconds (constant time scale) so touches look identical at any duration.
+    var width = TOUCH_COLS * SECONDS_PER_COL;      // touch "wavelength" (s), constant
 
     config.touches.forEach(function (touch) {
       var start = touch.time - TOUCH_PEAK_U * width;   // template u=0
@@ -435,7 +443,7 @@
   // left = past. `tNow` is the present-moment time (seconds) at the playhead.
   function drawWave(p, tNow) {
     var baseY         = p.gy + BASELINE_FRAC * p.gh;
-    var windowSeconds = config.duration;          // full timeline spans the width
+    var windowSeconds = VISIBLE_SECONDS;          // constant window => constant scroll speed
     var leftTime      = tNow - windowSeconds / 2; // time at the left grid edge
 
     function Y(v) { return baseY - v * p.gh; }
