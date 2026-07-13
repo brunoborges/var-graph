@@ -16,7 +16,8 @@
   var canvas, ctx;
   var animationId = null;
   var waveformData = null;
-  var animProgress = 0;      // current sample index being drawn
+  var presentTime = 0;       // the "present moment" (s) sitting on the centre playhead
+  var isAnimating = false;
   var ANIMATION_DURATION_MS = 4000;
   var SAMPLE_RATE = 200;     // samples per second
   var touchCounter = 0;
@@ -215,8 +216,8 @@
   function onReplay() {
     if (!waveformData) return;
     stopAnimation();
-    animProgress = 0;
-    setStatus('active', 'Recording\u2026');
+    presentTime = 0;
+    setStatus('active', 'Replaying\u2026');
     document.getElementById('btn-replay').disabled = true;
     runAnimation();
   }
@@ -224,9 +225,9 @@
   function startGenerate() {
     stopAnimation();
     waveformData  = buildWaveform();
-    animProgress  = 0;
+    presentTime   = 0;
     updateShareURL();
-    setStatus('active', 'Recording\u2026');
+    setStatus('active', 'Replaying\u2026');
     document.getElementById('btn-replay').disabled = true;
     runAnimation();
   }
@@ -279,23 +280,30 @@
   // ----------------------------------------------------------
   // Animation loop
   // ----------------------------------------------------------
+  // The "present moment" sweeps from the start of the timeline to its end.
+  // The waveform is drawn in a window centred on that moment, so recorded
+  // peaks scroll in from the right (future), cross the centre playhead
+  // (present), and recede to the left (past) — the VAR replay look.
   function runAnimation() {
     var startTime = null;
+    var endTarget = config.duration;
 
     function frame(timestamp) {
       if (startTime === null) startTime = timestamp;
-      var elapsed = timestamp - startTime;
+      var elapsed  = timestamp - startTime;
       var progress = Math.min(elapsed / ANIMATION_DURATION_MS, 1);
-      animProgress = progress * waveformData.length;
+      presentTime  = progress * endTarget;
       redraw();
-      if (animProgress < waveformData.length) {
+      if (progress < 1) {
         animationId = requestAnimationFrame(frame);
       } else {
         animationId = null;
+        isAnimating = false;
         setStatus('done', 'Complete');
         document.getElementById('btn-replay').disabled = false;
       }
     }
+    isAnimating = true;
     animationId = requestAnimationFrame(frame);
   }
 
@@ -330,14 +338,14 @@
   }
 
   function redraw() {
-    drawScene(Math.floor(animProgress));
+    drawScene(presentTime);
   }
 
   function drawEmptyGraph() {
-    drawScene(0);
+    drawScene(config.duration / 2);
   }
 
-  function drawScene(upTo) {
+  function drawScene(tNow) {
     // Reset the transform and derive the logical drawing size from the backing
     // store on every frame. This keeps drawing consistent with the canvas size
     // even if a resize (which clears the transform) races with the animation.
@@ -350,8 +358,9 @@
     ctx.clearRect(0, 0, W, H);          // let the grass field show around it
     drawPanelBackground(p);
     drawGrid(p);
-    drawWave(p, upTo);
+    drawWave(p, tNow);
     drawFrame(p);
+    drawPlayhead(p);
   }
 
   function roundRectPath(x, y, w, h, r) {
@@ -404,39 +413,56 @@
       ctx.stroke();
     }
 
-    // small quarter-arc in the bottom-left corner (as in the reference)
-    var baseY = p.gy + BASELINE_FRAC * p.gh;
-    ctx.strokeStyle = 'rgba(169,159,208,0.8)';
+    // Corner-kick arc, part of the field boundary: centred on the bottom-left
+    // corner where the left and bottom edges meet, curving into the pitch.
+    var cornerY = p.gy + p.gh;
+    ctx.strokeStyle = 'rgba(188,181,219,0.9)';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(p.gx, baseY, p.gh * 0.16, -Math.PI / 2, 0);
+    ctx.arc(p.gx, cornerY, p.gh * 0.13, -Math.PI / 2, 0);
     ctx.stroke();
 
     ctx.restore();
   }
 
-  function drawWave(p, upTo) {
-    if (!waveformData) return;
-    var total  = waveformData.length;
-    var end    = Math.min(upTo, total - 1);
-    var baseY  = p.gy + BASELINE_FRAC * p.gh;
+  // Draw the sensor trace inside a time window centred on the present moment.
+  // The horizontal baseline always spans the full width — as if the game were
+  // already running — with recorded touches appearing at their true time
+  // position: to the right of the centre = future, at the centre = now, to the
+  // left = past. `tNow` is the present-moment time (seconds) at the playhead.
+  function drawWave(p, tNow) {
+    var baseY         = p.gy + BASELINE_FRAC * p.gh;
+    var windowSeconds = config.duration;          // full timeline spans the width
+    var leftTime      = tNow - windowSeconds / 2; // time at the left grid edge
 
-    function X(i) {
-      if (total <= 1) return p.gx + p.gw;
-      return p.gx + p.gw - ((end - i) / (total - 1)) * p.gw;
-    }
     function Y(v) { return baseY - v * p.gh; }
+
+    // Sample the recorded waveform at an arbitrary time (seconds), with linear
+    // interpolation. Returns 0 (flat baseline) outside the recorded range so
+    // the horizontal line is continuous across the whole width.
+    function sampleAt(t) {
+      if (!waveformData || t < 0 || t >= config.duration) return 0;
+      var f  = t * SAMPLE_RATE;
+      var i0 = Math.floor(f);
+      if (i0 < 0 || i0 >= waveformData.length) return 0;
+      var i1 = Math.min(waveformData.length - 1, i0 + 1);
+      var fr = f - i0;
+      return waveformData[i0] * (1 - fr) + waveformData[i1] * fr;
+    }
 
     ctx.save();
     roundRectPath(p.gx, p.gy, p.gw, p.gh, 2);
     ctx.clip();
 
+    // One point per horizontal pixel keeps the line smooth at any width.
+    var steps = Math.max(2, Math.round(p.gw));
     function tracePath() {
       ctx.beginPath();
-      var started = false;
-      for (var i = 0; i <= end; i++) {
-        var x = X(i), y = Y(waveformData[i]);
-        if (!started) { ctx.moveTo(x, y); started = true; }
+      for (var s = 0; s <= steps; s++) {
+        var frac = s / steps;
+        var x = p.gx + frac * p.gw;
+        var y = Y(sampleAt(leftTime + frac * windowSeconds));
+        if (s === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
     }
@@ -458,16 +484,6 @@
     tracePath();
     ctx.stroke();
 
-    // scanning cursor while recording
-    if (end > 0 && end < total) {
-      var sx = X(end);
-      var grad = ctx.createLinearGradient(sx - 34, 0, sx, 0);
-      grad.addColorStop(0, 'transparent');
-      grad.addColorStop(1, 'rgba(147,247,223,0.12)');
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = grad;
-      ctx.fillRect(sx - 34, p.gy, 34, p.gh);
-    }
     ctx.restore();
   }
 
